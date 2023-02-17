@@ -1,0 +1,6 @@
+1. want logic to keep heavies powered up, maybe using smaller bot
+2. logic to keep factories alive with water 
+3. logic to find enemies and attack their recourses or units 
+4. movement ledger to avoid collision
+5. plan movements and path find to not update every turn, consult ledger
+luxai-s2 kits/python/main.py kits/python/main.py -v 2 -o replay.json

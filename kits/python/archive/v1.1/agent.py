@@ -12,31 +12,21 @@ class Agent():
 
     def early_setup(self, step: int, obs, remainingOverageTime: int = 60):
 
-        def find_zero_rubble_tiles(x, y, rubble_board, orig_x=None, orig_y=None, explored_tiles=None, zero_rubble_tiles=None, factory_tiles=None): #ChatGPT
-            if orig_x is None:
-                orig_x = x 
-            if orig_y is None:
-                orig_y = y
-            if explored_tiles is None:
-                explored_tiles = {}
-            if zero_rubble_tiles is None:
-                zero_rubble_tiles = {}
-            if factory_tiles is None:
-                factory_tiles = {}
-                for dx in [-1,0,1]:
-                    for dy in [-1,0,1]:
-                        factory_tiles[(x + dx, y + dy)] = True
-
-            if x < 0 or x >= 48 or y < 0 or y >= 48 or (x, y) in explored_tiles:
-                return zero_rubble_tiles
-            if (rubble_board[x][y] != 0) and ((x,y) not in factory_tiles):
-                return zero_rubble_tiles
-            explored_tiles[(x, y)] = True
-            if (x,y) not in factory_tiles:
-                zero_rubble_tiles[(x, y)] = True
-            for dx, dy in [[-1, 0], [0, 1], [1, 0], [0, -1]]:
-                find_zero_rubble_tiles(x+dx, y+dy, rubble_board, orig_x, orig_y, explored_tiles, zero_rubble_tiles, factory_tiles)
-            return zero_rubble_tiles
+        def find_0_rubble(x, y, rubble_board, already_explored, journey_count, limit):
+            if journey_count == limit:
+                return
+            for i in [-1,0,1]:
+                for j in [-1,0,1]:
+                    new_x = x + i 
+                    new_y = y + j
+                    if((new_x)<0 or (new_x)>=48 or (new_y)<0 or (new_y)>=48):
+                        continue 
+                    if [new_x, new_y] in already_explored or rubble_board[new_x, new_y]!=0 or (new_x==0 and new_y==0) or (new_x==1 and new_y==1) or (new_x==-1 and new_y==-1) or (new_x==1 and new_y==-1) or (new_x==-1 and new_y==1):
+                        continue 
+                    else:
+                        zero_rubble_tiles_found.append((new_x,new_y))
+                        already_explored.append((new_x,new_y))
+                        find_0_rubble(new_x, new_y, rubble_board, already_explored, journey_count+1, limit)
 
         if step == 0:
             # bid 0 to not waste resources bidding and declare as the default faction
@@ -61,7 +51,7 @@ class Agent():
                 best_factory_tiles = []
                 ice_tiles = np.argwhere(game_state.board.ice==1)
                 for potential_factory_tile in potential_factory_tiles:
-                    ice_tile_distances = np.mean((ice_tiles - potential_factory_tile)**2,1) # NOTE this implementation only chooses tiles orthogonal to the center of the factory, not the knight position to factory, which is OK for this purpose. imrpve later.
+                    ice_tile_distances = np.mean((ice_tiles - potential_factory_tile)**2,1)
                     closest_ice_distance = np.min(ice_tile_distances)
                     #closest_ore_tile = np.argmin(ore_tile_distances) don't actually use these
                     #closest_ore_tile_pos = ore_tiles[closest_ore_tile]
@@ -77,8 +67,9 @@ class Agent():
                 best_tiles = []
                 most_0_rubble_spots = 0
                 for fac_tile in best_factory_tiles:
-                    zero_rubble_tiles_found = find_zero_rubble_tiles(fac_tile[0], fac_tile[1], rubble_board)
-                    zero_rubble_spots=len(zero_rubble_tiles_found)
+                    zero_rubble_tiles_found=[]
+                    zero_rubble_spots = find_0_rubble(fac_tile[0],fac_tile[1],rubble_board,already_explored=[],journey_count=0,limit=3)
+                    zero_rubble_spots=len(set(zero_rubble_tiles_found))
                     if(zero_rubble_spots > most_0_rubble_spots):
                         best_tiles=[fac_tile]
                         most_0_rubble_spots=zero_rubble_spots
@@ -100,9 +91,9 @@ class Agent():
         for unit_id, factory in factories.items():
             if factory.power >= self.env_cfg.ROBOTS["HEAVY"].POWER_COST and factory.cargo.metal >= self.env_cfg.ROBOTS["HEAVY"].METAL_COST:
                 actions[unit_id] = factory.build_heavy()
-            elif factory.power >= self.env_cfg.ROBOTS["LIGHT"].POWER_COST and factory.cargo.metal >= self.env_cfg.ROBOTS["LIGHT"].METAL_COST and factory.cargo.metal>40:
+            elif factory.power >= self.env_cfg.ROBOTS["LIGHT"].POWER_COST and factory.cargo.metal >= self.env_cfg.ROBOTS["LIGHT"].METAL_COST:
                 actions[unit_id] = factory.build_light()
-            if game_state.real_env_steps > 600:
+            if game_state.real_env_steps > 700:
                 if (factory.water_cost(game_state)+20) <= factory.cargo.water:
                     actions[unit_id] = factory.water()
             factory_tiles += [factory.pos]
@@ -143,31 +134,19 @@ class Agent():
                     if(distance_to_fac<2): # spot is inside the factory borders
                         transfer_spot = spot
                         break
-                # if np.all(transfer_spot==unit.pos):
-                #     # start pickup and transfer cycle
-                #     if unit.power<150:
-                #         direction = direction_to(unit.pos, ice_location)
-                #         actions[unit_id] = [unit.pickup(4, 150,repeat=True)]
-                #     else:
-                #         direction = direction_to(unit.pos, ice_location)
-                #         actions[unit_id] = [unit.transfer(direction,4,unit.power)]
-                # else:
-                #     direction = direction_to(unit.pos, transfer_spot)
-                #     move_cost = unit.move_cost(game_state, direction)
-                #     if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
-                #         actions[unit_id] = [unit.move(direction, repeat=0)]
                 if np.all(transfer_spot==unit.pos):
-                    if unit.action_queue.size==0:
+                    # start pickup and transfer cycle
+                    if unit.power<150:
                         direction = direction_to(unit.pos, ice_location)
-                        actions[unit_id] = [unit.pickup(4, 150,repeat=1),unit.transfer(direction,4,150,repeat=1)]
-
-
+                        actions[unit_id] = [unit.pickup(4, 150,repeat=True)]
+                    else:
+                        direction = direction_to(unit.pos, ice_location)
+                        actions[unit_id] = [unit.transfer(direction,4,unit.power)]
                 else:
                     direction = direction_to(unit.pos, transfer_spot)
                     move_cost = unit.move_cost(game_state, direction)
                     if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
                         actions[unit_id] = [unit.move(direction, repeat=0)]
-
 
 
             elif(unit.unit_type=='HEAVY'):
@@ -180,41 +159,28 @@ class Agent():
                 #         if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
                 #             actions[unit_id] = [unit.move(direction, repeat=0)]
 
-                #1. go to ice
-                #2. dig and transfer forever
-                if np.all(closest_ice_tile == unit.pos): # unit is on ice                    
-                    if unit.action_queue.size==0:
-                        direction = direction_to(unit.pos, closest_factory_tile)
-                        actions[unit_id] = [unit.dig(n=20,repeat=10),unit.transfer(direction, 0, 3000, repeat=1)]
-                else:
-                    direction = direction_to(unit.pos, closest_ice_tile)
-                    move_cost = unit.move_cost(game_state, direction)
-                    if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
-                        actions[unit_id] = [unit.move(direction)]
-
-
-                # if (unit.cargo.ice < 100):
-                #     if np.all(closest_ice_tile == unit.pos): # unit is on ice
-                #         if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
-                #             if(unit_id not in actions):
-                #                 if not unit_id in actions: # don't update if the bot already has dig action
-                #                     actions[unit_id] = [unit.dig(repeat=50)] # repeat forever
+                if (unit.cargo.ice < 100):
+                    if np.all(closest_ice_tile == unit.pos): # unit is on ice
+                        if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+                            if(unit_id not in actions):
+                                if not unit_id in actions: # don't update if the bot already has dig action
+                                    actions[unit_id] = [unit.dig(repeat=50)] # repeat forever
                                 
-                #     else:
-                #         direction = direction_to(unit.pos, closest_ice_tile)
-                #         move_cost = unit.move_cost(game_state, direction)
-                #         if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
-                #             actions[unit_id] = [unit.move(direction, repeat=0)]
-                # # else if we have enough ice, we go back to the factory and dump it.
-                # elif (unit.cargo.ice >= 200):
-                #     direction = direction_to(unit.pos, closest_factory_tile)
-                #     if adjacent_to_factory or on_factory or in_outer_edge_of_factory or in_knight_formation:
-                #         if unit.power >= unit.action_queue_cost(game_state):
-                #             actions[unit_id] = [unit.transfer(direction, 0, unit.cargo.ice, repeat=0)]
-                #     else:
-                #         move_cost = unit.move_cost(game_state, direction)
-                #         if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
-                #             actions[unit_id] = [unit.move(direction, repeat=0)]
+                    else:
+                        direction = direction_to(unit.pos, closest_ice_tile)
+                        move_cost = unit.move_cost(game_state, direction)
+                        if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
+                            actions[unit_id] = [unit.move(direction, repeat=0)]
+                # else if we have enough ice, we go back to the factory and dump it.
+                elif (unit.cargo.ice >= 200):
+                    direction = direction_to(unit.pos, closest_factory_tile)
+                    if adjacent_to_factory or on_factory or in_outer_edge_of_factory or in_knight_formation:
+                        if unit.power >= unit.action_queue_cost(game_state):
+                            actions[unit_id] = [unit.transfer(direction, 0, unit.cargo.ice, repeat=0)]
+                    else:
+                        move_cost = unit.move_cost(game_state, direction)
+                        if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
+                            actions[unit_id] = [unit.move(direction, repeat=0)]
         return actions
                         
 

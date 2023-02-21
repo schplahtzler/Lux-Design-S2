@@ -3,10 +3,14 @@
 3. logic to find enemies and attack their recourses or units 
 4. movement ledger to avoid collision
 5. plan movements and path find to not update every turn, consult ledger
-luxai-s2 kits/python/main.py kits/python/main.py -v 2 -s 45 -o replay.json
+luxai-s2 kits/python/main.py kits/python/main/archive/v1.2/main.py -v 2 -o replay.json
 tar -czf submission.tar.gz main.py agent.py lux
 v1.1 plans:
 start watering like halfway through cause it seems to be more efficient if you only have 1 ice miner
 have a small bot always powering up a ice miner
 v1.2 plans:
+get small diggers that just dig all game around the site. ->NOT DONE
+fix the small bot powering up the ice miner -> DONE
+have spawn counter take into account that every factory tile is a 0 rubble for pourposes of counting --> DONE
+v1.3 plans:
 get small diggers that just dig all game around the site.
